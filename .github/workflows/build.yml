@@ -5,26 +5,37 @@ on:
     tags:
       - "v*"
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Build
+      - name: Build (PyInstaller)
         shell: pwsh
         run: |
           powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - name: Verify outputs
+        shell: pwsh
+        run: |
+          if (!(Test-Path "dist\SymbolExtractorATLAS.exe")) { throw "Missing dist\SymbolExtractorATLAS.exe" }
+          if (!(Test-Path "dist\SymbolExtractorATLAS.zip")) { throw "Missing dist\SymbolExtractorATLAS.zip" }
+
+      - name: Publish GitHub Release (upload EXE/ZIP)
+        uses: softprops/action-gh-release@v2
         with:
-          name: SymbolExtractorATLAS
-          path: |
+          generate_release_notes: true
+          files: |
             dist/SymbolExtractorATLAS.exe
             dist/SymbolExtractorATLAS.zip
