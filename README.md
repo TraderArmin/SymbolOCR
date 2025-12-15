@@ -1,0 +1,1 @@
+GUI tool that OCRs a user-defined screen region to extract a trading symbol (regex or token-based), then auto-clicks a target field and types the symbol on a configurable polling loop. Built with Tkinter, MSS, Tesseract, and PyAutoGUI; supports multi-monitor setups, ROI selection by clicks, and JSON config persistence.
