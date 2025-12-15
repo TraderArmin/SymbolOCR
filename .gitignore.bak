@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+
+# venv
+.venv/
+
+# build artifacts
+build/
+dist/
+*.spec
+
+# Playwright bundled browsers (optional!)
+# Wenn du die Browser im Repo NICHT versionieren willst:
+pw-browsers/
+
+# IDE
+.idea/

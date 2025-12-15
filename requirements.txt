@@ -1,0 +1,6 @@
+numpy
+Pillow
+mss
+pytesseract
+pyautogui
+playwright

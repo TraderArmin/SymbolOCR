@@ -28,7 +28,10 @@ def resource_path(rel: str) -> str:
         return str(Path(base) / rel)
     return str(Path(__file__).parent / rel)
 
+
 os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", resource_path("pw-browsers"))
+
+
 def auto_set_tesseract_path(cfg):
     # If user did not specify a custom path, use bundled tesseract
     if not cfg.tesseract_cmd.strip():
@@ -36,8 +39,98 @@ def auto_set_tesseract_path(cfg):
 
 
 CONFIG_DEFAULT = "ocr_symbol_gui_config.json"
-APP_TITLE = "Symbol extractor (ATLAS)"
+APP_TITLE = "Symbol Extractor (ATLAS) – OCR & Auto-Input"
 APP_USER_MODEL_ID = "ocr_symbol_bot.OCRSymbolBot"
+
+
+# -----------------------------
+# Friendly UI mappings / help text
+# -----------------------------
+TARGET_MODE_DISPLAY_TO_VALUE = {
+    "Desktop (mouse & keyboard) – PyAutoGUI": "pyautogui",
+    "Web (ATLAS in browser) – Playwright": "playwright",
+}
+TARGET_MODE_VALUE_TO_DISPLAY = {v: k for k, v in TARGET_MODE_DISPLAY_TO_VALUE.items()}
+
+PW_ENGINE_DISPLAY_TO_VALUE = {
+    "Chromium engine (Playwright)": "chromium",
+    "Firefox engine (Playwright)": "firefox",
+    "WebKit engine (Safari-like, Playwright)": "webkit",
+}
+PW_ENGINE_VALUE_TO_DISPLAY = {v: k for k, v in PW_ENGINE_DISPLAY_TO_VALUE.items()}
+
+PW_CHANNEL_DISPLAY_TO_VALUE = {
+    "Auto (Playwright Chromium)": "",
+    "Google Chrome (installed)": "chrome",
+    "Microsoft Edge (installed)": "msedge",
+    "Chromium (installed)": "chromium",
+}
+PW_CHANNEL_VALUE_TO_DISPLAY = {v: k for k, v in PW_CHANNEL_DISPLAY_TO_VALUE.items()}
+
+
+def help_text_glossary() -> str:
+    return (
+        "Glossary (short & practical)\n\n"
+        "• OCR:\n"
+        "  Text recognition from a screenshot area (ROI).\n\n"
+        "• ROI (Region of Interest):\n"
+        "  The rectangular area of the screenshot used for OCR.\n\n"
+        "• PyAutoGUI (Desktop mode):\n"
+        "  Controls OS mouse/keyboard. Works with any app.\n"
+        "  Downside: moves the real mouse pointer and depends on window focus.\n\n"
+        "• Playwright (Web/Browser mode):\n"
+        "  Controls the browser directly (without moving the OS mouse).\n"
+        "  Upside: more stable for web inputs; login/session can be persisted.\n\n"
+        "• Chromium / Firefox / WebKit:\n"
+        "  Browser engines Playwright can drive.\n"
+        "  Chromium is the base for Chrome/Edge; WebKit is Safari-like.\n\n"
+        "• Channel (Chromium only):\n"
+        "  Use an installed browser (Chrome/Edge) instead of Playwright’s bundled Chromium.\n\n"
+        "• Input selector (CSS):\n"
+        "  Optional CSS selector for the ATLAS symbol input field.\n"
+        "  Leave empty = auto-detect (recommended).\n"
+    )
+
+
+def help_text_quick_start(mode: str) -> str:
+    if mode == "playwright":
+        return (
+            "Quick Start (Web / Playwright)\n\n"
+            "1) Capture screenshot (so you can define ROI)\n"
+            "2) Select ROI (2 clicks)\n"
+            "3) 'Open / Login Browser' → log in once\n"
+            "4) Start\n\n"
+            "Note: In Playwright mode you do NOT need a desktop click target."
+        )
+    return (
+        "Quick Start (Desktop / PyAutoGUI)\n\n"
+        "1) Capture screenshot\n"
+        "2) Select ROI (2 clicks)\n"
+        "3) Select input point (1 click) – that’s where it will click & type\n"
+        "4) Start\n\n"
+        "Tip: PyAutoGUI FailSafe: move mouse to top-left corner to abort."
+    )
+
+
+def info_text_playwright() -> str:
+    return (
+        "Playwright (browser automation)\n\n"
+        "Playwright controls the browser directly. This is often more reliable than OS mouse clicks,\n"
+        "because it targets the actual web element (the symbol input).\n\n"
+        "Login/session is stored in:\n"
+        "~/.ocr_symbol_bot/pw_profile/\n\n"
+        "If ATLAS changes, you can provide a CSS selector — usually not needed."
+    )
+
+
+def info_text_chromium_channel() -> str:
+    return (
+        "Chromium vs. Channel\n\n"
+        "• Browser engine = which engine Playwright drives (Chromium/Firefox/WebKit).\n"
+        "• Channel (Chromium only) = use an installed browser instead of Playwright’s Chromium:\n"
+        "  - 'Google Chrome (installed)' → channel 'chrome'\n"
+        "  - 'Microsoft Edge (installed)' → channel 'msedge'\n"
+    )
 
 
 # -----------------------------
@@ -208,7 +301,6 @@ def _create_app_icon(png_path: Path, ico_path: Path) -> None:
         font = ImageFont.load_default()
 
     text = "OCR"
-    bbox = d.textbbox((0, 0), text, font=font)
     tx = int(size * 0.12)
     ty = int(size * 0.70)
     d.text((tx + 2, ty + 3), text, font=font, fill=(0, 0, 0, 90))
@@ -272,8 +364,6 @@ class Config:
     pw_input_selector: str = ""  # optional override; if empty, auto-detect
 
     # Browser placement:
-    # If browser_monitor_index > 0: position = monitor.left/top + browser_x/y
-    # If browser_monitor_index == 0: position = browser_x/y (global coords)
     browser_monitor_index: int = 0
     browser_x: int = 50
     browser_y: int = 50
@@ -461,9 +551,10 @@ class PlaywrightController:
             from playwright.sync_api import sync_playwright  # noqa
         except Exception as e:
             self._error = (
-                "Playwright import failed. Install:\n"
+                "Playwright import failed.\n\n"
+                "Install:\n"
                 "  pip install playwright\n"
-                "  playwright install\n"
+                "  playwright install\n\n"
                 f"Details: {e}"
             )
             self._ready.set()
@@ -778,7 +869,7 @@ class App(tk.Tk):
         self._apply_app_icon()
 
         self.title(APP_TITLE)
-        self.geometry("1260x860")
+        self.geometry("1260x900")
 
         pyautogui.FAILSAFE = True
 
@@ -832,6 +923,39 @@ class App(tk.Tk):
         except Exception:
             pass
 
+    # ---------- Menu ----------
+    def _build_menu(self):
+        menubar = tk.Menu(self)
+
+        helpmenu = tk.Menu(menubar, tearoff=0)
+        helpmenu.add_command(label="Quick Start (current mode)", command=self._show_quick_start)
+        helpmenu.add_command(label="Glossary (Playwright, Chromium, ROI, ...)", command=self._show_glossary)
+        helpmenu.add_separator()
+        helpmenu.add_command(label="About", command=self._show_about)
+
+        menubar.add_cascade(label="Help", menu=helpmenu)
+        self.config(menu=menubar)
+
+    def _show_glossary(self):
+        messagebox.showinfo("Glossary", help_text_glossary())
+
+    def _show_quick_start(self):
+        mode = self.target_mode_var.get().strip().lower()
+        # mode var is display text; convert to internal
+        internal = TARGET_MODE_DISPLAY_TO_VALUE.get(mode, None)
+        if internal is None:
+            internal = self.cfg.target_mode
+        messagebox.showinfo("Quick Start", help_text_quick_start(internal))
+
+    def _show_about(self):
+        messagebox.showinfo(
+            "About",
+            "Symbol Extractor (ATLAS)\n\n"
+            "• Captures a screen region (ROI)\n"
+            "• Runs OCR to extract a symbol\n"
+            "• Types it into a target (Desktop via PyAutoGUI or Web via Playwright)\n"
+        )
+
     # ---------- persistence ----------
     def _load_startup_state(self):
         cfg_path = _default_config_path()
@@ -879,7 +1003,8 @@ class App(tk.Tk):
         self.whitelist_var.set(self.cfg.whitelist)
         self.tess_var.set(self.cfg.tesseract_cmd)
 
-        self.target_mode_var.set(self.cfg.target_mode)
+        # Friendly labels in UI
+        self.target_mode_var.set(TARGET_MODE_VALUE_TO_DISPLAY.get(self.cfg.target_mode, "Desktop (mouse & keyboard) – PyAutoGUI"))
         self.atlas_url_var.set(self.cfg.atlas_url)
         self.pw_selector_var.set(self.cfg.pw_input_selector)
 
@@ -889,8 +1014,8 @@ class App(tk.Tk):
         self.bw_var.set(self.cfg.browser_w)
         self.bh_var.set(self.cfg.browser_h)
 
-        self.pw_browser_var.set(self.cfg.pw_browser)
-        self.pw_channel_var.set(self.cfg.pw_channel)
+        self.pw_browser_var.set(PW_ENGINE_VALUE_TO_DISPLAY.get(self.cfg.pw_browser, "Chromium engine (Playwright)"))
+        self.pw_channel_var.set(PW_CHANNEL_VALUE_TO_DISPLAY.get(self.cfg.pw_channel, "Auto (Playwright Chromium)"))
 
     def _save_default_config_silent(self):
         self.sync_cfg_from_ui(require_screenshot=False)
@@ -937,7 +1062,7 @@ class App(tk.Tk):
                 tesseract_cmd=str(raw.get("tesseract_cmd", "")),
 
                 target_mode=str(raw.get("target_mode", "pyautogui")),
-                atlas_url=str(raw.get("atlas_url", "https://tradingterminal.com/")),
+                atlas_url=str(raw.get("atlas_url", "https://tradingterminal.com/atlas")),
                 pw_input_selector=str(raw.get("pw_input_selector", "")),
 
                 browser_monitor_index=int(raw.get("browser_monitor_index", raw.get("monitor_index", 0))),
@@ -1004,6 +1129,8 @@ class App(tk.Tk):
 
     # ---------- UI ----------
     def _build_ui(self):
+        self._build_menu()
+
         root = ttk.Frame(self, padding=10)
         root.pack(fill="both", expand=True)
 
@@ -1047,14 +1174,17 @@ class App(tk.Tk):
         targetf.pack(fill="x", pady=(10, 0))
 
         ttk.Label(targetf, text="Mode:").grid(row=0, column=0, sticky="w")
-        self.target_mode_var = tk.StringVar(value="pyautogui")
+        self.target_mode_var = tk.StringVar(value="Desktop (mouse & keyboard) – PyAutoGUI")
         self.target_mode_combo = ttk.Combobox(
             targetf, state="readonly",
-            values=["pyautogui", "playwright"],
-            textvariable=self.target_mode_var, width=14
+            values=list(TARGET_MODE_DISPLAY_TO_VALUE.keys()),
+            textvariable=self.target_mode_var, width=34
         )
         self.target_mode_combo.grid(row=0, column=1, sticky="w", padx=6)
         self.target_mode_combo.bind("<<ComboboxSelected>>", lambda _e: self._update_target_ui_state())
+
+        self.btn_mode_help = ttk.Button(targetf, text="?", width=3, command=self._mode_help)
+        self.btn_mode_help.grid(row=0, column=1, sticky="w", padx=(370, 0))
 
         ttk.Label(targetf, text="ATLAS URL:").grid(row=0, column=2, sticky="e")
         self.atlas_url_var = tk.StringVar()
@@ -1067,32 +1197,38 @@ class App(tk.Tk):
         self.pw_selector_entry = ttk.Entry(targetf, textvariable=self.pw_selector_var)
         self.pw_selector_entry.grid(row=1, column=1, columnspan=3, sticky="we", padx=6, pady=(6, 0))
 
+        self.btn_selector_help = ttk.Button(targetf, text="?", width=3, command=self._selector_help)
+        self.btn_selector_help.grid(row=1, column=3, sticky="e", padx=(0, 6), pady=(6, 0))
+
         # Browser selection row
-        ttk.Label(targetf, text="Browser:").grid(row=2, column=0, sticky="w", pady=(6, 0))
-        self.pw_browser_var = tk.StringVar(value="chromium")
+        ttk.Label(targetf, text="Browser engine:").grid(row=2, column=0, sticky="w", pady=(6, 0))
+        self.pw_browser_var = tk.StringVar(value="Chromium engine (Playwright)")
         self.pw_browser_combo = ttk.Combobox(
             targetf, state="readonly",
-            values=["chromium", "firefox", "webkit"],
-            textvariable=self.pw_browser_var, width=12
+            values=list(PW_ENGINE_DISPLAY_TO_VALUE.keys()),
+            textvariable=self.pw_browser_var, width=28
         )
         self.pw_browser_combo.grid(row=2, column=1, sticky="w", padx=(6, 2), pady=(6, 0))
         self.pw_browser_combo.bind("<<ComboboxSelected>>", lambda _e: self._update_target_ui_state())
 
-        ttk.Label(targetf, text="Channel:").grid(row=2, column=1, sticky="w", padx=(140, 2), pady=(6, 0))
-        self.pw_channel_var = tk.StringVar(value="")
+        ttk.Label(targetf, text="Channel:").grid(row=2, column=2, sticky="e", pady=(6, 0))
+        self.pw_channel_var = tk.StringVar(value="Auto (Playwright Chromium)")
         self.pw_channel_combo = ttk.Combobox(
             targetf, state="readonly",
-            values=["", "chrome", "msedge", "chromium"],
-            textvariable=self.pw_channel_var, width=10
+            values=list(PW_CHANNEL_DISPLAY_TO_VALUE.keys()),
+            textvariable=self.pw_channel_var, width=26
         )
-        self.pw_channel_combo.grid(row=2, column=1, sticky="w", padx=(200, 2), pady=(6, 0))
+        self.pw_channel_combo.grid(row=2, column=3, sticky="w", padx=6, pady=(6, 0))
 
-        ttk.Label(targetf, text="Browser monitor:").grid(row=2, column=2, sticky="e", pady=(6, 0))
+        self.btn_browser_help = ttk.Button(targetf, text="?", width=3, command=self._browser_help)
+        self.btn_browser_help.grid(row=2, column=3, sticky="e", padx=(0, 6), pady=(6, 0))
+
+        ttk.Label(targetf, text="Browser monitor:").grid(row=3, column=0, sticky="w", pady=(6, 0))
         self.browser_monitor_var = tk.IntVar(value=0)
-        self.browser_monitor_combo = ttk.Combobox(targetf, state="readonly", width=24)
-        self.browser_monitor_combo.grid(row=2, column=3, sticky="w", padx=6, pady=(6, 0))
+        self.browser_monitor_combo = ttk.Combobox(targetf, state="readonly", width=28)
+        self.browser_monitor_combo.grid(row=3, column=1, sticky="w", padx=6, pady=(6, 0))
 
-        ttk.Label(targetf, text="Offset X/Y/W/H:").grid(row=3, column=0, sticky="w", pady=(6, 0))
+        ttk.Label(targetf, text="Offset X/Y/W/H:").grid(row=3, column=2, sticky="e", pady=(6, 0))
         self.bx_var = tk.IntVar(value=50)
         self.by_var = tk.IntVar(value=50)
         self.bw_var = tk.IntVar(value=1400)
@@ -1102,19 +1238,19 @@ class App(tk.Tk):
         self.by_entry = ttk.Entry(targetf, textvariable=self.by_var, width=7)
         self.bw_entry = ttk.Entry(targetf, textvariable=self.bw_var, width=7)
         self.bh_entry = ttk.Entry(targetf, textvariable=self.bh_var, width=7)
-        self.bx_entry.grid(row=3, column=1, sticky="w", padx=(6, 2), pady=(6, 0))
-        self.by_entry.grid(row=3, column=1, sticky="w", padx=(70, 2), pady=(6, 0))
-        self.bw_entry.grid(row=3, column=1, sticky="w", padx=(134, 2), pady=(6, 0))
-        self.bh_entry.grid(row=3, column=1, sticky="w", padx=(198, 2), pady=(6, 0))
+        self.bx_entry.grid(row=3, column=3, sticky="w", padx=(6, 2), pady=(6, 0))
+        self.by_entry.grid(row=3, column=3, sticky="w", padx=(70, 2), pady=(6, 0))
+        self.bw_entry.grid(row=3, column=3, sticky="w", padx=(134, 2), pady=(6, 0))
+        self.bh_entry.grid(row=3, column=3, sticky="w", padx=(198, 2), pady=(6, 0))
 
         self.btn_open_browser = ttk.Button(targetf, text="Open / Login Browser", command=self.open_login_browser)
-        self.btn_open_browser.grid(row=3, column=2, padx=6, pady=(6, 0), sticky="w")
+        self.btn_open_browser.grid(row=4, column=0, padx=6, pady=(8, 0), sticky="w")
 
         self.btn_check_login = ttk.Button(targetf, text="Check Login", command=self.check_login_state)
-        self.btn_check_login.grid(row=3, column=3, padx=6, pady=(6, 0), sticky="w")
+        self.btn_check_login.grid(row=4, column=1, padx=6, pady=(8, 0), sticky="w")
 
         self.btn_reset_login = ttk.Button(targetf, text="Reset Login", command=self.reset_login_state)
-        self.btn_reset_login.grid(row=3, column=3, padx=(110, 6), pady=(6, 0), sticky="w")
+        self.btn_reset_login.grid(row=4, column=2, padx=6, pady=(8, 0), sticky="w")
 
         # ---- OCR ----
         ocrf = ttk.LabelFrame(root, text="OCR & Extraction", padding=10)
@@ -1188,7 +1324,7 @@ class App(tk.Tk):
         mid.add(left, weight=3)
         mid.add(right, weight=2)
 
-        canvas_frame = ttk.LabelFrame(left, text="Screenshot (click to mark)", padding=6)
+        canvas_frame = ttk.LabelFrame(left, text="Screenshot (click to mark ROI / point)", padding=6)
         canvas_frame.pack(fill="both", expand=True)
 
         self.canvas = tk.Canvas(canvas_frame, bg="#1e1e1e", highlightthickness=0)
@@ -1223,26 +1359,60 @@ class App(tk.Tk):
         self.preview_label = ttk.Label(out)
         self.preview_label.pack(anchor="w", pady=(6, 0))
 
-        # ---- Tooltips ----
-        ToolTip(self.target_mode_combo, "pyautogui: clicks & types into any desktop app.\n"
-                                        "playwright: types into ATLAS web without moving OS mouse.\n"
-                                        "Login is persisted in ~/.ocr_symbol_bot/pw_profile/")
-        ToolTip(self.pw_browser_combo, "Playwright engine: chromium / firefox / webkit.")
-        ToolTip(self.pw_channel_combo, "Chromium only. Use installed Chrome/Edge.\n"
-                                       "Examples: chrome, msedge. Empty = Playwright Chromium.")
-        ToolTip(self.browser_monitor_combo, "Monitor where the browser window should open.\n"
-                                            "Position = monitor origin + Offset X/Y.")
-        ToolTip(self.atlas_url_entry, "ATLAS start URL. If your flow is different, adjust this URL.")
-        ToolTip(self.pw_selector_entry, "Optional CSS selector for the symbol input field.\n"
-                                        "Leave empty for auto-detect (recommended).")
-        ToolTip(self.btn_open_browser, "Opens a Playwright-controlled browser window.\n"
-                                       "Log in once; session will be saved.")
-        ToolTip(self.btn_check_login, "Checks if ATLAS input field is visible (heuristic = logged in).")
-        ToolTip(self.btn_reset_login, "Clears the saved Playwright profile (forces fresh login).")
+        # ---- Tooltips (English) ----
+        ToolTip(self.target_mode_combo,
+                "Desktop/PyAutoGUI: clicks & types into any desktop app.\n"
+                "Web/Playwright: types into ATLAS web without moving the OS mouse.\n"
+                "Login is persisted in ~/.ocr_symbol_bot/pw_profile/")
+
+        ToolTip(self.pw_browser_combo,
+                "Choose the Playwright browser engine.\n"
+                "Chromium is the base for Chrome/Edge; WebKit is Safari-like.")
+
+        ToolTip(self.pw_channel_combo,
+                "Chromium only: choose an installed browser (Chrome/Edge),\n"
+                "or keep Auto to use Playwright Chromium.")
+
+        ToolTip(self.browser_monitor_combo,
+                "Monitor where the browser window should open.\n"
+                "Position = monitor origin + Offset X/Y.")
+
+        ToolTip(self.atlas_url_entry,
+                "ATLAS start URL. Adjust if your workflow uses a different entry page.")
+
+        ToolTip(self.pw_selector_entry,
+                "Optional CSS selector for the symbol input field.\n"
+                "Leave empty to auto-detect (recommended).")
+
+        ToolTip(self.btn_open_browser,
+                "Opens a Playwright-controlled browser.\n"
+                "Log in once; the session will be saved.")
+
+        ToolTip(self.btn_check_login,
+                "Checks if the symbol input field is visible (heuristic = logged in).")
+
+        ToolTip(self.btn_reset_login,
+                "Clears the saved Playwright profile (forces fresh login).")
+
+    # --- small help buttons ---
+    def _mode_help(self):
+        messagebox.showinfo("Mode help", info_text_playwright())
+
+    def _browser_help(self):
+        messagebox.showinfo("Browser help", info_text_chromium_channel())
+
+    def _selector_help(self):
+        messagebox.showinfo(
+            "Input selector help",
+            "This is optional.\n\n"
+            "Leave it empty to let the app auto-detect the symbol input field.\n"
+            "Only set it if auto-detection fails after ATLAS updates."
+        )
 
     def _update_target_ui_state(self):
-        mode = self.target_mode_var.get().strip().lower()
-        is_pw = (mode == "playwright")
+        display_mode = self.target_mode_var.get().strip()
+        internal_mode = TARGET_MODE_DISPLAY_TO_VALUE.get(display_mode, "pyautogui")
+        is_pw = (internal_mode == "playwright")
 
         # Point selection is relevant for pyautogui only
         st_point = "normal" if not is_pw else "disabled"
@@ -1252,11 +1422,16 @@ class App(tk.Tk):
         st_pw = "normal" if is_pw else "disabled"
         self.atlas_url_entry.configure(state=st_pw)
         self.pw_selector_entry.configure(state=st_pw)
-
         self.pw_browser_combo.configure(state=st_pw)
+
         # channel only meaningful for chromium
-        if is_pw and (self.pw_browser_var.get().strip().lower() == "chromium"):
-            self.pw_channel_combo.configure(state="readonly")
+        if is_pw:
+            engine_value = PW_ENGINE_DISPLAY_TO_VALUE.get(self.pw_browser_var.get().strip(), "chromium")
+            if engine_value == "chromium":
+                self.pw_channel_combo.configure(state="readonly")
+            else:
+                self.pw_channel_combo.configure(state="disabled")
+                self.pw_channel_var.set("Auto (Playwright Chromium)")
         else:
             self.pw_channel_combo.configure(state="disabled")
 
@@ -1324,7 +1499,7 @@ class App(tk.Tk):
         self._sync_visual_points_from_cfg()
         self.redraw_selections()
 
-        self.status_var.set("Screenshot loaded. Select ROI (2 clicks) or select input point (1 click).")
+        self.status_var.set("Screenshot loaded. Select ROI (2 clicks) or input point (1 click).")
 
     def render_image(self):
         if self.screen_img is None:
@@ -1380,9 +1555,13 @@ class App(tk.Tk):
         if self.screen_img is None:
             messagebox.showwarning("Info", "Please capture a screenshot first.")
             return
-        if self.target_mode_var.get().strip().lower() == "playwright":
-            messagebox.showinfo("Info", "In Playwright mode no desktop click target is needed.")
+
+        display_mode = self.target_mode_var.get().strip()
+        internal_mode = TARGET_MODE_DISPLAY_TO_VALUE.get(display_mode, "pyautogui")
+        if internal_mode == "playwright":
+            messagebox.showinfo("Info", "In Playwright mode you do not need a desktop click target.")
             return
+
         self.mode = "point"
         self.status_var.set("Point mode: click once on the screenshot to set the input click target.")
 
@@ -1492,12 +1671,18 @@ class App(tk.Tk):
             self.cfg.whitelist = self.whitelist_var.get()
             self.cfg.tesseract_cmd = self.tess_var.get().strip()
 
-            self.cfg.target_mode = self.target_mode_var.get().strip().lower()
+            # Convert friendly display values back to internal values
+            display_mode = self.target_mode_var.get().strip()
+            self.cfg.target_mode = TARGET_MODE_DISPLAY_TO_VALUE.get(display_mode, "pyautogui")
+
             self.cfg.atlas_url = self.atlas_url_var.get().strip()
             self.cfg.pw_input_selector = self.pw_selector_var.get().strip()
 
-            self.cfg.pw_browser = self.pw_browser_var.get().strip().lower()
-            self.cfg.pw_channel = self.pw_channel_var.get().strip()
+            display_engine = self.pw_browser_var.get().strip()
+            self.cfg.pw_browser = PW_ENGINE_DISPLAY_TO_VALUE.get(display_engine, "chromium")
+
+            display_channel = self.pw_channel_var.get().strip()
+            self.cfg.pw_channel = PW_CHANNEL_DISPLAY_TO_VALUE.get(display_channel, "")
 
             self.cfg.browser_monitor_index = int(self.browser_monitor_combo.current())
             self.cfg.browser_x = int(self.bx_var.get())
@@ -1521,7 +1706,7 @@ class App(tk.Tk):
             return "Please capture a screenshot first."
 
         if self.cfg.target_mode not in ("pyautogui", "playwright"):
-            return "Target mode must be 'pyautogui' or 'playwright'."
+            return "Target mode must be Desktop (PyAutoGUI) or Web (Playwright)."
 
         if self.cfg.target_mode == "playwright":
             if not self.cfg.atlas_url:
@@ -1529,7 +1714,7 @@ class App(tk.Tk):
             if self.cfg.browser_w < 300 or self.cfg.browser_h < 300:
                 return "Browser width/height too small."
             if self.cfg.pw_browser not in ("chromium", "firefox", "webkit"):
-                return "Browser must be chromium / firefox / webkit."
+                return "Browser engine must be Chromium / Firefox / WebKit."
             if self.cfg.pw_browser != "chromium" and self.cfg.pw_channel.strip():
                 # channel only valid for chromium
                 self.cfg.pw_channel = ""
@@ -1569,7 +1754,7 @@ class App(tk.Tk):
             messagebox.showerror("Error", err)
             return
         if self.cfg.target_mode != "playwright":
-            messagebox.showinfo("Info", "Switch mode to 'playwright' first.")
+            messagebox.showinfo("Info", "Switch mode to 'Web (ATLAS in browser) – Playwright' first.")
             return
 
         def work():
