@@ -1,0 +1,18 @@
+{
+  "monitor_index": 0,
+  "monitor_left": -400,
+  "monitor_top": -2160,
+  "monitor_width": 7680,
+  "monitor_height": 4320,
+  "roi": {
+    "x": 3263,
+    "y": 66,
+    "w": 69,
+    "h": 31
+  },
+  "input_click_abs_x": 3218,
+  "input_click_abs_y": 1828,
+  "poll_seconds": 0.75,
+  "type_delay_seconds": 0.03,
+  "require_change": true
+}
